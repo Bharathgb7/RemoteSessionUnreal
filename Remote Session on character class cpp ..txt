@@ -1,4 +1,4 @@
-Remote Session on character class .cpp File
+// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "MenuCharacter.h"
 #include "Engine/LocalPlayer.h"
@@ -12,6 +12,7 @@ Remote Session on character class .cpp File
 #include "InputActionValue.h"
 #include "OnlineSubsystem.h"
 #include "OnlineSessionSettings.h"
+#include "Online/OnlineSessionNames.h"
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
@@ -19,7 +20,8 @@ DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 // AMenuCharacter
 
 AMenuCharacter::AMenuCharacter():
-	CreateSessionCompleteDelegate(FOnCreateSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnCreateSessionComplete))
+	CreateSessionCompleteDelegate(FOnCreateSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnCreateSessionComplete)),
+	FindSessionCompleteDelegate(FOnFindSessionsCompleteDelegate::CreateUObject(this,&ThisClass::OnFindSessionComplete))
 {
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
@@ -95,10 +97,27 @@ void AMenuCharacter::CreateGameSession()
 	SessionSettings->bAllowJoinViaPresence = true;
 	SessionSettings->bShouldAdvertise = true;
 	SessionSettings->bUsesPresence = true;
+	SessionSettings->Set(FName("MatchSettings"), FString("FreeForAll"), EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
 	OnlineSessionInterface->CreateSession(*LocalPlayer->GetPreferredUniqueNetId(), NAME_GameSession, *SessionSettings);
 	OnlineSessionInterface->AddOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteDelegate);
 	UE_LOG(LogTemp,Warning,TEXT("FUNC CALLED"))
+}
+
+void AMenuCharacter::JoinGameSession()
+{
+	if (!OnlineSessionInterface.IsValid())
+	{
+		return;
+	}
+	OnlineSessionInterface->AddOnFindSessionsCompleteDelegate_Handle(FindSessionCompleteDelegate);
+	SessionSearch = MakeShareable(new FOnlineSessionSearch);
+	SessionSearch->MaxSearchResults = 10000;
+	SessionSearch->bIsLanQuery = false;
+	SessionSearch->QuerySettings.Set(SEARCH_PRESENCE, true, EOnlineComparisonOp::Equals);
+	const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
+	OnlineSessionInterface->FindSessions(*LocalPlayer->GetPreferredUniqueNetId(), SessionSearch.ToSharedRef());
+	OnlineSessionInterface->AddOnFindSessionsCompleteDelegate_Handle(FindSessionCompleteDelegate);
 }
 
 void AMenuCharacter::OnCreateSessionComplete(FName SessionName, bool bWasSucessful)
@@ -121,8 +140,74 @@ void AMenuCharacter::OnCreateSessionComplete(FName SessionName, bool bWasSucessf
 				FString(TEXT("Session Failed To Create!"))
 			);
 		}
+		UWorld* World = GetWorld();
+		if (World)
+		{
+			World->ServerTravel(FString("/Game/ThirdPerson/Maps/Lobby?listen"));
+		}
 	}
 	
+}
+
+void AMenuCharacter::OnFindSessionComplete(bool bWasSucessful)
+{
+	if (!OnlineSessionInterface.IsValid())
+	{
+		return;
+	}
+	for (auto Result : SessionSearch->SearchResults)
+	{
+		FString ID = Result.GetSessionIdStr();
+		FString User = Result.Session.OwningUserName;
+		FString MatchType;
+		Result.Session.SessionSettings.Get(FName("MatchType"), MatchType);
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(
+				-1,
+				15.f,
+				FColor::Cyan,
+				FString::Printf(TEXT("ID : %s,User : %s"), *ID, *User)
+			);
+		}
+		if (MatchType == FString("FreeForAll"))
+		{
+			if (GEngine)
+			{
+				GEngine->AddOnScreenDebugMessage(-1,
+					15.f,
+					FColor::Green,
+					FString::Printf(TEXT("Joining Match Type : %s"),*MatchType)
+				);
+			}
+		}
+		OnlineSessionInterface->AddOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteDelegate);
+		const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
+		OnlineSessionInterface->JoinSession(*LocalPlayer->GetPreferredUniqueNetId(), NAME_GameSession, Result);
+	}
+}
+
+void AMenuCharacter::OnJoinSessionComplete(FName SessionName, EOnJoinSessionCompleteResult::Type Result)
+{
+	if (!OnlineSessionInterface.IsValid())
+	{
+		return;
+	}
+	FString Address;
+	OnlineSessionInterface->GetResolvedConnectString(NAME_GameSession, Address);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1,
+			15.f,
+			FColor::Yellow,
+			FString::Printf(TEXT("Connect String : %s"), *Address)
+		);
+	}
+	APlayerController* PlayerController = GetGameInstance()->GetFirstLocalPlayerController();
+	if (PlayerController)
+	{
+		PlayerController->ClientTravel(Address, ETravelType::TRAVEL_Absolute);
+	}
 }
 
 
