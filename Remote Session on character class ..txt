@@ -1,4 +1,4 @@
-Remote Session on character class .h File
+// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,7 +7,6 @@ Remote Session on character class .h File
 #include "Logging/LogMacros.h"
 #include "Interfaces/OnlineSessionDelegates.h"
 #include "Interfaces/OnlineSessionInterface.h"
-#include "Delegates/IDelegateInstance.h"
 #include "MenuCharacter.generated.h"
 
 
@@ -78,9 +77,15 @@ public:
 protected:
 	UFUNCTION(BlueprintCallable)
 	void CreateGameSession();
+	UFUNCTION(BlueprintCallable)
+	void JoinGameSession();
 	void OnCreateSessionComplete(FName SessionName, bool bWasSucessful);
-
+	void OnFindSessionComplete(bool bWasSucessful);
+	void OnJoinSessionComplete(FName SessionName, EOnJoinSessionCompleteResult::Type Result);
 private:
 	FOnCreateSessionCompleteDelegate CreateSessionCompleteDelegate;
+	FOnFindSessionsCompleteDelegate FindSessionCompleteDelegate;
+	TSharedPtr<FOnlineSessionSearch>SessionSearch;
+	FOnJoinSessionCompleteDelegate JoinSessionCompleteDelegate;
 };
 
